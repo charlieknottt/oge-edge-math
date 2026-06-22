@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Semi Buildout → Semi Supply: Edge Math</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:#fff;color:#000;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;}
+body{max-width:920px;margin:0 auto;padding:28px 24px;}
+h1{font-size:20px;font-weight:700;margin-bottom:20px;}
+.params{font-size:11px;margin-bottom:28px;}
+
+section{margin-bottom:36px;}
+section h2{font-size:10px;text-transform:uppercase;letter-spacing:.7px;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:12px;}
+.intro{font-size:12px;line-height:1.8;margin-bottom:16px;}
+
+/* Edge diagram */
+.edge-row{display:flex;align-items:center;margin-bottom:14px;}
+.circ{width:84px;height:84px;border:2px solid #000;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;flex-shrink:0;}
+.circ .cn{font-size:9px;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;line-height:1.3;}
+.circ .cv{font-size:22px;font-weight:800;}
+.edge-mid{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:0 14px;}
+.edge-mid .ew{font-size:13px;font-weight:700;}
+.edge-mid .eline{width:100%;border-top:2px solid #000;position:relative;}
+.edge-mid .eline::after{content:"▶";position:absolute;right:-8px;top:-12px;font-size:14px;}
+.edge-mid .el{font-size:10px;}
+.dec-strip{background:#000;color:#fff;display:inline-block;padding:7px 14px;font-size:12px;margin-top:10px;}
+
+/* Formulas */
+.f{line-height:2.4;font-size:12px;}
+.f .indent{display:block;padding-left:20px;}
+.f .label{font-size:10px;display:block;padding-left:20px;padding-top:0;line-height:1.6;margin-bottom:6px;}
+.hi{background:#000;color:#fff;padding:0 4px;}
+
+/* Tick buttons */
+.btn-row{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;}
+.btn-row button{border:1px solid #000;background:#fff;padding:4px 9px;cursor:pointer;font-family:inherit;font-size:11px;color:#000;}
+.btn-row button.active{background:#000;color:#fff;}
+.btn-row button.inlag{border-color:#ccc;color:#aaa;}
+.btn-row button.firstlive{border-width:2px;font-weight:700;}
+.tick-panel{border:1px solid #000;padding:16px;font-size:12px;line-height:2.1;min-height:100px;}
+.tick-panel .hi{background:#000;color:#fff;padding:0 3px;}
+</style>
+</head>
+<body>
+
+<h1>Semi Buildout → Semi Supply — Edge Math</h1>
+
+<!-- 1: WHAT'S BEING MODELED -->
+<section>
+  <h2>What Is Being Modeled</h2>
+  <p class="intro">
+    This formula is intended to model the behaviors between forces in the world as simply and accurately as possible. It is naive to assume there are fully deterministic relationships between geopolitical forces, but for the sake of the OGE platform, these relationships are the basis on which decisions can be made and examined. What matters most is decision analysis based on given information — the accuracy of the model is a plus, not a requirement for OGE success.
+  </p>
+  <p class="intro">
+    A <b>stock</b> is any measurable quantity that exists in the world and changes over time — here, domestic semiconductor buildout capacity and trusted semiconductor supply.
+    An <b>edge</b> is a causal relationship between two stocks: when one changes, it eventually pushes the other.
+    A <b>player decision</b> directly sets the value of a source stock. That changed value then propagates to a target stock after a delay called the <b>lag</b>.
+  </p>
+  <div class="edge-row">
+    <div class="circ" id="nodeA">
+      <div class="cn">Semi<br>Buildout</div>
+      <div class="cv" id="valA">20</div>
+    </div>
+    <div class="edge-mid">
+      <div class="ew">+ 0.6</div>
+      <div class="eline"></div>
+      <div class="el">lag: 5 ticks</div>
+    </div>
+    <div class="circ" id="nodeB">
+      <div class="cn">Semi<br>Supply</div>
+      <div class="cv" id="valB">40</div>
+    </div>
+  </div>
+  <div class="dec-strip">Player decision at tick 0 &nbsp;·&nbsp; buildout jumps from 20 → 60 &nbsp;(deviation: +40) &nbsp;·&nbsp; takes effect at tick 1</div>
+</section>
+
+<!-- 2: NUMBER LINES -->
+<section>
+  <h2>How Values Change Over Time</h2>
+  <p class="intro">
+    Each stock's value is shown at every tick on the number lines below.
+    The source stock (Semi Buildout) jumps when the player makes a decision. The target stock (Semi Supply) stays flat during the lag window — it does not respond until the lag is fully elapsed. Once the lag fills, supply begins moving toward a new equilibrium.
+  </p>
+  <svg id="nl" style="width:100%;display:block;" height="290"></svg>
+</section>
+
+<!-- 3: HOW THE MATH WORKS -->
+<section>
+  <h2>How the Math Works</h2>
+  <p class="intro">
+    Three formulas govern what happens each tick. The first compresses the source stock's deviation so that large moves have diminishing influence. The second sets the equilibrium value the target stock is trying to reach. The third moves the target stock a fixed fraction of the remaining distance toward that equilibrium each tick.
+  </p>
+  <div class="f">
+    <b>Step 1 — Measure how far the source stock has moved from its own baseline:</b><br>
+    buildout_deviation_from_baseline = buildout_current_value − buildout_baseline_value<br>
+    <span class="label">This tells us how much the source stock has been displaced. A stock at its baseline has deviation = 0 and exerts no pull on the target.</span>
+
+    <b>Step 2 — Compress that deviation through the saturation function:</b><br>
+    squash(buildout_deviation_from_baseline) = SAT_A · tanh(buildout_deviation_from_baseline / SAT_A)<br>
+    <span class="label">Saturation prevents extreme deviations from having unlimited influence. No matter how large the deviation grows, the squash result is capped near SAT_A = 38. Small deviations behave nearly linearly; large ones flatten out.</span>
+
+    <b>Step 3 — Compute the equilibrium value the target stock is being pulled toward:</b><br>
+    supply_equilibrium_value = supply_baseline_value + edge_weight · squash(buildout_deviation_from_baseline)<br>
+    <span class="label">This is the value supply would reach if given infinite ticks with no other changes. It stays fixed as long as buildout's deviation doesn't change.</span>
+
+    <b>Step 4 — Move the target stock a fraction of the remaining gap each tick:</b><br>
+    supply_value_next_tick = supply_current_value + α · (supply_equilibrium_value − supply_current_value)<br>
+    <span class="label">α = 0.3 means each tick closes 30% of whatever gap remains between the current value and the equilibrium. The steps get smaller every tick — the stock approaches exponentially, never overshooting.</span>
+  </div>
+</section>
+
+<!-- 4: VARIABLE GLOSSARY -->
+<section>
+  <h2>Variable Reference</h2>
+  <p class="intro">Every variable used in the formulas below, with its definition and value in this example.</p>
+  <table id="var-table" style="width:100%;border-collapse:collapse;font-size:12px;line-height:2.0;">
+    <tbody>
+      <tr><td style="width:46%;padding:6px 10px;border:1px solid #000;font-weight:700;">buildout_current_value</td><td style="padding:6px 10px;border:1px solid #000;">The value of Semi Buildout at the current tick. Jumps to 60 at tick 1 when the player decision takes effect.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">buildout_baseline_value</td><td style="padding:6px 10px;border:1px solid #000;">The resting value of Semi Buildout before any decision is made. In this example: <b>20</b>.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">buildout_deviation_from_baseline</td><td style="padding:6px 10px;border:1px solid #000;">How far Semi Buildout has moved from its own baseline. = buildout_current_value − buildout_baseline_value. In this example: 60 − 20 = <b>40</b>. A stock at its baseline has deviation = 0 and exerts no pull on the target.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">SAT_A</td><td style="padding:6px 10px;border:1px solid #000;">The saturation constant. Caps the maximum influence any single edge can exert regardless of how extreme the deviation gets. In this example: <b>38</b>.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">squash(buildout_deviation_from_baseline)</td><td style="padding:6px 10px;border:1px solid #000;">The deviation compressed through the saturation function: SAT_A · tanh(deviation / SAT_A). Applies diminishing returns — large deviations keep contributing, but with decreasing effect. In this example: <b>≈ 29.8</b>.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">edge_weight</td><td style="padding:6px 10px;border:1px solid #000;">The strength of the causal relationship between Semi Buildout and Semi Supply. Scales how much of the squashed deviation reaches the target. In this example: <b>0.6</b>.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">supply_baseline_value</td><td style="padding:6px 10px;border:1px solid #000;">The resting value of Semi Supply when no edge is pushing it. In this example: <b>40</b>.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">supply_equilibrium_value</td><td style="padding:6px 10px;border:1px solid #000;">The value Semi Supply would reach if given infinite ticks at the current buildout level. The destination the stock is moving toward. Stays fixed as long as buildout's deviation doesn't change. In this example: <b>≈ 57.9</b>.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">supply_current_value</td><td style="padding:6px 10px;border:1px solid #000;">The value of Semi Supply at the current tick, before this tick's update is applied.</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">α (alpha)</td><td style="padding:6px 10px;border:1px solid #000;">The fraction of the remaining gap between supply_current_value and supply_equilibrium_value that is closed each tick. In this example: <b>0.3</b> (30% per tick).</td></tr>
+      <tr><td style="padding:6px 10px;border:1px solid #000;font-weight:700;">supply_value_next_tick</td><td style="padding:6px 10px;border:1px solid #000;">The value Semi Supply will have at the start of the next tick, after this tick's update is applied.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 5: FULL DERIVATION -->
+<section>
+  <h2>Full Derivation — Tick 6 → 7 (First Delta)</h2>
+  <p class="intro">
+    The lag is 5 ticks. The decision takes effect at tick 1. So the first tick at which the lag window is fully filled is tick 6 — when the engine looks back 5 ticks and finds buildout already at 60. This is the first tick where supply changes.
+  </p>
+  <div class="f" id="deriv-block"></div>
+</section>
+
+<!-- 5: STEP THROUGH -->
+<section>
+  <h2>Step Through Each Tick</h2>
+  <p class="intro">Click any tick to see the formula evaluated at that moment. Grey buttons are inside the lag window — no effect on supply yet. The bold button is the first active tick.</p>
+  <div class="btn-row" id="btn-row"></div>
+  <div class="tick-panel" id="tick-panel">Click a tick above.</div>
+</section>
+
+<script>
+const N         = 13;    // ticks 0..12
+const BBASE     = 20;    // buildout baseline
+const DEC_DEV   = 40;    // decision deviation (buildout: 20 → 60, dev = +40)
+const SBASE     = 40;    // supply baseline
+const W         = 0.6;   // edge weight
+const SAT_A     = 38;    // saturation constant
+const ALPHA     = 0.3;   // goal-seek rate
+const LAG       = 5;     // ticks of lag
+
+// Decision takes effect at tick 1: buildout = 20 at t=0, 60 at t>=1
+function buildoutValueAt(t) {
+  return t >= 1 ? BBASE + DEC_DEV : BBASE;
+}
+function buildoutDevAt(t) {
+  return buildoutValueAt(t) - BBASE;
+}
+
+const sq      = d => SAT_A * Math.tanh(d / SAT_A);
+const sqResult = sq(DEC_DEV);               // squash(40) ≈ 29.8
+const supplyTarget = SBASE + W * sqResult;  // ≈ 57.9
+
+// Compute supply timeline
+// At tick t: active if lagged dev > 0, i.e., buildoutDevAt(t - LAG) > 0, i.e., t-LAG >= 1, i.e., t >= LAG+1 = 6
+const supply = [SBASE];
+for (let t = 0; t < N - 1; t++) {
+  const laggedDev = buildoutDevAt(t - LAG);  // 0 for t<6, 40 for t>=6
+  const active = laggedDev > 0;
+  supply.push(active
+    ? supply[t] + ALPHA * (supplyTarget - supply[t])
+    : supply[t]);
+}
+
+const FIRST_ACTIVE = LAG + 1;  // = 6
+
+// ---- Derivation block ----
+const tanhVal = Math.tanh(DEC_DEV / SAT_A);
+document.getElementById("deriv-block").innerHTML = `
+<b>Step 1 — Measure buildout's deviation from its own baseline:</b><br>
+buildout_deviation_from_baseline = buildout_current_value − buildout_baseline_value<br>
+<span class="indent">= 60 − 20 = <span class="hi">40</span></span><br>
+<span class="label">At tick 6, buildout has been at 60 since tick 1. Its baseline is 20. Deviation = 40.</span>
+
+<b>Step 2 — Compress through saturation:</b><br>
+squash(buildout_deviation_from_baseline) = 38 · tanh(40 / 38)<br>
+<span class="indent">= 38 · tanh(1.053)</span><br>
+<span class="indent">= 38 · ${tanhVal.toFixed(3)}</span><br>
+<span class="indent">= <span class="hi">${sqResult.toFixed(1)}</span></span><br>
+<span class="label">A raw deviation of 40 is compressed to ${sqResult.toFixed(1)} by the saturation function.</span>
+
+<b>Step 3 — Compute supply's target value:</b><br>
+supply_equilibrium_value = supply_baseline_value + edge_weight · squash(buildout_deviation_from_baseline)<br>
+<span class="indent">= 40 + 0.6 · ${sqResult.toFixed(1)}</span><br>
+<span class="indent">= 40 + ${(W * sqResult).toFixed(1)} = <span class="hi">${supplyTarget.toFixed(1)}</span></span><br>
+<span class="label">Supply is now being pulled toward ${supplyTarget.toFixed(1)}. It won't reach it instantly — it closes the gap at 30% per tick.</span>
+
+<b>Step 4 — Move supply toward the target:</b><br>
+supply_value_next_tick = supply_current_value + α · (supply_equilibrium_value − supply_current_value)<br>
+<span class="indent">= 40 + 0.3 · (${supplyTarget.toFixed(1)} − 40)</span><br>
+<span class="indent">= 40 + 0.3 · ${(supplyTarget - SBASE).toFixed(1)}</span><br>
+<span class="indent">= 40 + ${(ALPHA * (supplyTarget - SBASE)).toFixed(1)} = <span class="hi">${(SBASE + ALPHA * (supplyTarget - SBASE)).toFixed(1)}</span></span>`;
+
+// ---- SVG Number Lines ----
+const SVGNS = "http://www.w3.org/2000/svg";
+const nlSvg  = document.getElementById("nl");
+let hlTick   = null;
+
+function mk(tag, attrs, txt) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (txt !== undefined) e.textContent = txt;
+  return e;
+}
+
+function drawNL() {
+  nlSvg.innerHTML = "";
+  const W_ = nlSvg.parentElement.clientWidth;
+  nlSvg.setAttribute("viewBox", `0 0 ${W_} 290`);
+  nlSvg.setAttribute("width", W_);
+
+  const LW = 82, PR = 20;
+  const cw = W_ - LW - PR;
+  const xOf = t => LW + t * cw / (N - 1);
+  const mono = "ui-monospace,Menlo,Consolas,monospace";
+  const BLACK = "#000";
+
+  // Highlight selected tick
+  if (hlTick !== null) {
+    nlSvg.appendChild(mk("rect", {
+      x: xOf(hlTick) - 13, y: 16, width: 26, height: 252, fill: "#f0f0f0"
+    }));
+  }
+
+  // Shared tick labels
+  const TY = 142;
+  for (let t = 0; t < N; t++) {
+    nlSvg.appendChild(mk("text", {
+      x: xOf(t), y: TY,
+      "text-anchor": "middle", "font-size": 10,
+      "font-family": mono, fill: BLACK
+    }, t));
+  }
+  nlSvg.appendChild(mk("text", {
+    x: LW + cw / 2, y: TY + 14,
+    "text-anchor": "middle", "font-size": 9,
+    "font-family": mono, fill: BLACK
+  }, "tick"));
+
+  // ── Buildout row ──
+  const BLY = 78, BVY = 56;
+
+  nlSvg.appendChild(mk("text", {x:0, y:BLY-12, "font-size":10, "font-family":mono, fill:BLACK, "font-weight":"bold"}, "Buildout"));
+  nlSvg.appendChild(mk("text", {x:0, y:BLY+4,  "font-size":10, "font-family":mono, fill:BLACK}, "Semi"));
+
+  // Axis
+  nlSvg.appendChild(mk("line", {x1:LW, y1:BLY, x2:W_-PR, y2:BLY, stroke:BLACK, "stroke-width":2}));
+  nlSvg.appendChild(mk("text", {x:W_-PR+2, y:BLY+5, "font-size":13, "font-family":mono, fill:BLACK}, "→"));
+
+  // Values and ticks
+  for (let t = 0; t < N; t++) {
+    const x = xOf(t);
+    const v = buildoutValueAt(t);
+    nlSvg.appendChild(mk("line", {x1:x, y1:BLY-7, x2:x, y2:BLY+7, stroke:BLACK, "stroke-width":1.5}));
+    nlSvg.appendChild(mk("text", {x, y:BVY, "text-anchor":"middle", "font-size":11, "font-family":mono, fill:BLACK}, v));
+  }
+
+  // Step arrow on buildout (decision takes effect at tick 1)
+  const x0 = xOf(0), x1 = xOf(1);
+  const mid = (x0 + x1) / 2;
+  // Vertical jump indicator
+  nlSvg.appendChild(mk("line", {x1:mid, y1:BLY-38, x2:mid, y2:BLY-7, stroke:BLACK, "stroke-width":1, "stroke-dasharray":"3 2"}));
+  nlSvg.appendChild(mk("text", {x:mid+3, y:BLY-40, "font-size":9, "font-family":mono, fill:BLACK}, "DECISION: +40"));
+
+  // ── Supply row ──
+  const SLY = 200, SVY = 228;
+
+  nlSvg.appendChild(mk("text", {x:0, y:SLY-12, "font-size":10, "font-family":mono, fill:BLACK, "font-weight":"bold"}, "Semi"));
+  nlSvg.appendChild(mk("text", {x:0, y:SLY+4,  "font-size":10, "font-family":mono, fill:BLACK}, "Supply"));
+
+  nlSvg.appendChild(mk("line", {x1:LW, y1:SLY, x2:W_-PR, y2:SLY, stroke:BLACK, "stroke-width":2}));
+  nlSvg.appendChild(mk("text", {x:W_-PR+2, y:SLY+5, "font-size":13, "font-family":mono, fill:BLACK}, "→"));
+
+  for (let t = 0; t < N; t++) {
+    const x = xOf(t);
+    const v = supply[t];
+    const inLag = t <= FIRST_ACTIVE;
+    nlSvg.appendChild(mk("line", {x1:x, y1:SLY-7, x2:x, y2:SLY+7, stroke:BLACK, "stroke-width":1.5}));
+    nlSvg.appendChild(mk("text", {
+      x, y:SVY, "text-anchor":"middle", "font-size":11, "font-family":mono, fill:BLACK
+    }, inLag ? Math.round(v).toString() : v.toFixed(1)));
+  }
+
+  // "lag fills" annotation at tick FIRST_ACTIVE (=6)
+  const xLag = xOf(FIRST_ACTIVE);
+  nlSvg.appendChild(mk("line", {x1:xLag, y1:SLY+7, x2:xLag, y2:SLY+26, stroke:BLACK, "stroke-width":1, "stroke-dasharray":"3 2"}));
+  nlSvg.appendChild(mk("text", {x:xLag, y:SLY+36, "text-anchor":"middle", "font-size":9, "font-family":mono, fill:BLACK}, "lag fills"));
+
+  // "Δ first occurs" box at tick FIRST_ACTIVE+1 (=7)
+  const xFirst = xOf(FIRST_ACTIVE + 1);
+  nlSvg.appendChild(mk("line", {x1:xFirst, y1:SLY+7, x2:xFirst, y2:SLY+48, stroke:BLACK, "stroke-width":1, "stroke-dasharray":"3 2"}));
+  const bw = 80, bh = 18;
+  nlSvg.appendChild(mk("rect", {x:xFirst-bw/2, y:SLY+48, width:bw, height:bh, fill:"#fff", stroke:BLACK, "stroke-width":1}));
+  nlSvg.appendChild(mk("text", {x:xFirst, y:SLY+61, "text-anchor":"middle", "font-size":9, "font-family":mono, fill:BLACK}, "Δ first occurs"));
+}
+
+// ---- Tick buttons + panel ----
+const btnRow    = document.getElementById("btn-row");
+const tickPanel = document.getElementById("tick-panel");
+
+function showTick(t) {
+  hlTick = t;
+
+  // Update circle values
+  document.getElementById("valA").textContent = buildoutValueAt(t);
+  document.getElementById("valB").textContent = t < N
+    ? (t <= FIRST_ACTIVE ? Math.round(supply[t]) : supply[t].toFixed(1))
+    : supply[N-1].toFixed(1);
+
+  btnRow.querySelectorAll("button").forEach(b => b.classList.toggle("active", parseInt(b.dataset.t) === t));
+
+  const prevV     = supply[t];
+  const nextV     = t < N - 1 ? supply[t + 1] : prevV;
+  const delta     = nextV - prevV;
+  const isActive  = t >= FIRST_ACTIVE;
+  const isDecision = t === 0;
+  const laggedDev = buildoutDevAt(t - LAG);
+
+  if (isDecision) {
+    tickPanel.innerHTML = `<b>Tick 0 → 1 &nbsp;·&nbsp; Decision tick</b><br><br>
+The player enters a decision. Buildout changes from 20 to 60 — a deviation of +40 from its baseline of 20.<br>
+The new value takes effect at tick 1.<br><br>
+Lag window check: the engine looks back ${LAG} ticks. At tick 0 − ${LAG} = tick −${LAG}, buildout was still at 20 (deviation = 0). No pull on supply yet.<br>
+Supply holds at <span class="hi">40</span>.`;
+  } else if (!isActive) {
+    tickPanel.innerHTML = `<b>Tick ${t} → ${t+1} &nbsp;·&nbsp; Lag window (${t} of ${LAG} ticks elapsed after decision)</b><br><br>
+buildout_current_value = ${buildoutValueAt(t)} &nbsp;·&nbsp; buildout_deviation_from_baseline = ${buildoutDevAt(t)}<br>
+Lag check: lagged buildout = buildoutValueAt(${t} − ${LAG}) = buildoutValueAt(${t-LAG}) = <b>${buildoutValueAt(t-LAG)}</b> &nbsp;(deviation = ${laggedDev})<br><br>
+The lag window is not yet filled. Supply sees no signal from buildout.<br>
+Supply holds at <span class="hi">${Math.round(prevV)}</span>.`;
+  } else if (t === FIRST_ACTIVE) {
+    tickPanel.innerHTML = `<b>Tick ${t} → ${t+1} &nbsp;·&nbsp; Lag window fills — first delta</b><br><br>
+Lag check: lagged buildout = buildoutValueAt(${t} − ${LAG}) = buildoutValueAt(${t-LAG}) = <span class="hi">60</span> &nbsp;(deviation = +40)<br>
+The lag window is now full. The edge activates.<br><br>
+buildout_deviation_from_baseline = 60 − 20 = <span class="hi">40</span><br>
+squash(40) = 38 · tanh(40/38) = <span class="hi">${sqResult.toFixed(1)}</span><br>
+supply_equilibrium_value = 40 + 0.6 · ${sqResult.toFixed(1)} = <span class="hi">${supplyTarget.toFixed(1)}</span><br>
+supply_value_next_tick = ${prevV.toFixed(1)} + 0.3 · (${supplyTarget.toFixed(1)} − ${prevV.toFixed(1)}) = ${prevV.toFixed(1)} + <span class="hi">${delta.toFixed(2)}</span> = <span class="hi">${nextV.toFixed(1)}</span>`;
+  } else {
+    const gapRemaining = supplyTarget - prevV;
+    tickPanel.innerHTML = `<b>Tick ${t} → ${t+1} &nbsp;·&nbsp; Edge active</b><br><br>
+buildout_deviation_from_baseline = 60 − 20 = <span class="hi">40</span> &nbsp;(unchanged — buildout still at 60)<br>
+supply_equilibrium_value = <span class="hi">${supplyTarget.toFixed(1)}</span> &nbsp;(same every tick while buildout holds)<br>
+Gap remaining = ${supplyTarget.toFixed(1)} − ${prevV.toFixed(1)} = ${gapRemaining.toFixed(1)}<br><br>
+supply_value_next_tick = ${prevV.toFixed(1)} + 0.3 · ${gapRemaining.toFixed(1)}<br>
+<span style="padding-left:20px">= ${prevV.toFixed(1)} + <span class="hi">${delta.toFixed(2)}</span> = <span class="hi">${nextV.toFixed(1)}</span></span>`;
+  }
+
+  drawNL();
+}
+
+// Build buttons
+for (let t = 0; t < N; t++) {
+  const btn = document.createElement("button");
+  btn.textContent = "t" + t;
+  btn.dataset.t = t;
+  if (t > 0 && t < FIRST_ACTIVE) btn.classList.add("inlag");
+  if (t === FIRST_ACTIVE) btn.classList.add("firstlive");
+  btn.onclick = () => showTick(t);
+  btnRow.appendChild(btn);
+}
+
+drawNL();
+showTick(FIRST_ACTIVE);
+window.addEventListener("resize", drawNL);
+</script>
+</body>
+</html>
